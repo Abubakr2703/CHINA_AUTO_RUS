@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from china_auto_rus import config
 
 
@@ -25,7 +27,9 @@ def test_display_name() -> None:
     assert config.DEFAULT_PROFILE.display_name == "Changan Deepal S07 2026 (CN)"
 
 
-def test_ensure_directories_creates_workspace(tmp_path: Path, monkeypatch) -> None:
+def test_ensure_directories_creates_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     workspace = tmp_path / "workspace"
     monkeypatch.setattr(config, "WORKSPACE_DIR", workspace)
     monkeypatch.setattr(config, "REPORTS_DIR", workspace / "reports")

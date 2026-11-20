@@ -23,8 +23,9 @@ logger = logging.getLogger("china_auto_rus")
 def _configure_console() -> None:
     """Принудительно UTF-8 в консоли Windows (по умолчанию бывает cp1251/cp866)."""
     for stream in (sys.stdout, sys.stderr):
-        if stream is not None and hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8", errors="replace")
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 def _pyside6_version() -> str:
