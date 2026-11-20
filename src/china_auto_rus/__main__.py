@@ -101,10 +101,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.analyze is not None:
         return _run_analysis(args.analyze, compute_hashes=not args.no_hash)
 
-    print(f"{APP_NAME} {__version__} — каркас проекта.")
-    print("Интерфейс будет добавлен на Этапе 2.")
-    print("Диагностика: --check; анализ без GUI: --analyze PATH")
-    return 0
+    from china_auto_rus.app import run
+
+    return run([])
 
 
 if __name__ == "__main__":
