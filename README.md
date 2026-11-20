@@ -4,7 +4,7 @@ Windows-приложение для исследования и последую
 китайских автомобилей. Первый профиль — **Changan Deepal S07 2026, китайская версия,
 рестайлинг**.
 
-> Статус: **Этап 1 — каркас проекта**. Интерфейс и анализатор ещё не реализованы.
+> Статус: **Этап 2.1 — ядро анализатора готово**. Интерфейс — следующий шаг.
 
 ## Задачи MVP
 
@@ -26,11 +26,16 @@ Windows-приложение для исследования и последую
 
 ```
 src/china_auto_rus/
-├── __main__.py       # точка входа: python -m china_auto_rus
+├── __main__.py       # python -m china_auto_rus [--check | --analyze PATH]
 ├── config.py         # пути, профиль автомобиля, версия
 ├── logging_setup.py  # файловые и консольные логи
 ├── core/             # бизнес-логика (без импортов PySide6)
-└── ui/               # интерфейс (Этап 2)
+│   ├── models.py     # dataclasses: FileEntry, FileInsight, AnalysisReport
+│   ├── scanner.py    # обход, SHA-256, формат по magic bytes
+│   ├── extractors.py # текст, кодировки, ZIP/APK
+│   ├── analyzer.py   # оркестрация: scan → extract → report
+│   └── report.py     # JSON + Markdown
+└── ui/               # интерфейс (Этап 2.2)
 tests/                # pytest
 workspace/            # рабочие копии и отчёты (в .gitignore)
 logs/                 # логи (в .gitignore)
@@ -45,9 +50,16 @@ pip install -e ".[dev]"
 
 python -m china_auto_rus
 python -m china_auto_rus --check
+python -m china_auto_rus --analyze "C:\path\to\dump"
+python -m china_auto_rus --analyze "C:\path\to\dump" --no-hash
 pytest
 ruff check .
+mypy
 ```
+
+`--analyze` — временная точка проверки ядра без GUI: сканирует папку или файл,
+считает SHA-256, определяет форматы, читает текст (UTF-8/UTF-16/GBK), перечисляет
+содержимое ZIP/APK и сохраняет отчёт в `workspace/reports/`.
 
 ## Безопасность
 
@@ -60,5 +72,6 @@ ruff check .
 ## Дорожная карта
 
 - [x] Этап 1: окружение, структура, git, конфигурация
-- [ ] Этап 2: интерфейс, импорт файлов, файловый анализатор
-- [ ] Этап 3: языковые ресурсы, экспорт отчётов, тесты
+- [x] Этап 2.1: ядро анализатора (сканер, извлечение, отчёты, тесты)
+- [ ] Этап 2.2: интерфейс PySide6, импорт файлов, дерево, прогресс
+- [ ] Этап 3: языковые ресурсы, AXML/ARSC, экспорт

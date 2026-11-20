@@ -1,4 +1,4 @@
-"""Точка входа: python -m china_auto_rus [--check]."""
+"""Точка входа: python -m china_auto_rus [--check | --analyze PATH]."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import argparse
 import logging
 import platform
 import sys
+from pathlib import Path
 
 from china_auto_rus import __version__
 from china_auto_rus.config import (
@@ -15,6 +16,8 @@ from china_auto_rus.config import (
     WORKSPACE_DIR,
     ensure_directories,
 )
+from china_auto_rus.core.analyzer import analyze_paths
+from china_auto_rus.core.report import human_size, save_report
 from china_auto_rus.logging_setup import setup_logging
 
 logger = logging.getLogger("china_auto_rus")
@@ -48,6 +51,25 @@ def _run_check() -> int:
     return 0
 
 
+def _run_analysis(path: Path, *, compute_hashes: bool) -> int:
+    """Анализирует путь и сохраняет отчёты. Нужен для проверки ядра без GUI."""
+    report = analyze_paths([path], compute_hashes=compute_hashes)
+    json_path, md_path = save_report(report)
+
+    print(
+        f"Файлов: {len(report.files)}, объём: {human_size(report.total_size)}, "
+        f"ошибок: {len(report.errors)}"
+    )
+    for error in report.errors[:10]:
+        print(f"  ! {error.path}: {error.message}")
+    if len(report.errors) > 10:
+        print(f"  … ещё ошибок: {len(report.errors) - 10}")
+
+    print(f"JSON: {json_path}")
+    print(f"MD:   {md_path}")
+    return 0 if report.files else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="china-auto-rus", description=APP_NAME)
     parser.add_argument("--version", action="version", version=f"{APP_NAME} {__version__}")
@@ -55,6 +77,17 @@ def main(argv: list[str] | None = None) -> int:
         "--check",
         action="store_true",
         help="проверить окружение и выйти",
+    )
+    parser.add_argument(
+        "--analyze",
+        type=Path,
+        metavar="PATH",
+        help="проанализировать файл или папку и сохранить отчёт",
+    )
+    parser.add_argument(
+        "--no-hash",
+        action="store_true",
+        help="не считать SHA-256 (быстрее на больших образах)",
     )
     args = parser.parse_args(argv)
 
@@ -65,8 +98,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         return _run_check()
 
+    if args.analyze is not None:
+        return _run_analysis(args.analyze, compute_hashes=not args.no_hash)
+
     print(f"{APP_NAME} {__version__} — каркас проекта.")
-    print("Интерфейс будет добавлен на Этапе 2. Для диагностики: --check")
+    print("Интерфейс будет добавлен на Этапе 2.")
+    print("Диагностика: --check; анализ без GUI: --analyze PATH")
     return 0
 
 
