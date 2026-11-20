@@ -1,0 +1,35 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Tools
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# IDE / OS
+.idea/
+.vscode/
+Thumbs.db
+desktop.ini
+
+# Local runtime data
+.env
+logs/
+workspace/
+
+# Firmware and binary artifacts must never be committed
+*.apk
+*.apks
+*.xapk
+*.img
+*.bin
+*.so
+*.odex
+*.vdex
+*.dex

@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "china-auto-rus"
+version = "0.1.0"
+description = "Windows-инструмент для исследования и русификации мультимедиа китайских автомобилей"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # Мета-пакет PySide6 нужен на Windows: он настраивает пути к Qt DLL.
+    "PySide6>=6.8,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+china-auto-rus = "china_auto_rus.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
