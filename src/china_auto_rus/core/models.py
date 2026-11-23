@@ -20,7 +20,11 @@ class FileKind(StrEnum):
     DEX = "dex"
     SQLITE = "sqlite"
     IMAGE = "image"
+    # Известная бинарная сигнатура без отдельного парсера.
     BINARY = "binary"
+    # Расширение заявляет формат, но содержимое ему не соответствует.
+    UNSUPPORTED = "unsupported"
+    # Формат достоверно определить нельзя.
     UNKNOWN = "unknown"
 
 
@@ -29,6 +33,21 @@ class Stage(StrEnum):
 
     SCAN = "scan"
     ANALYZE = "analyze"
+
+
+class EncodingConfidence(StrEnum):
+    """Насколько можно доверять определённой кодировке."""
+
+    HIGH = "high"
+    LOW = "low"
+
+
+class CompletionState(StrEnum):
+    """Состояние, с которым анализ завершился."""
+
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    LIMIT_REACHED = "limit_reached"
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +77,9 @@ class FileInsight:
     preview: str | None = None
     archive_entries: tuple[ArchiveEntry, ...] = ()
     notes: tuple[str, ...] = ()
+    # Для неоднозначных байтов кодировка не выбирается наугад.
+    encoding_confidence: EncodingConfidence = EncodingConfidence.HIGH
+    encoding_candidates: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +94,9 @@ class ScanResult:
     files: list[FileEntry] = field(default_factory=list)
     errors: list[ScanError] = field(default_factory=list)
     cancelled: bool = False
+    # Имя сработавшего ограничения: "max_files", "max_total_bytes", "max_errors".
+    # None означает, что скан завершился без достижения лимитов.
+    limit_reached: str | None = None
 
 
 @dataclass(slots=True)
@@ -85,6 +110,15 @@ class AnalysisReport:
     cancelled: bool
     total_size: int
     kind_counts: dict[str, int]
+    # Перенесено из ScanResult, чтобы отчёт явно показывал неполный анализ.
+    limit_reached: str | None = None
+    # Временные метки и итоги анализа. Заполняются build_report(); значения
+    # по умолчанию нужны для совместимости со старыми отчётами и тестами.
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    duration_seconds: float | None = None
+    successful_files: int = 0
+    completion_state: CompletionState = CompletionState.COMPLETED
 
 
 @dataclass(frozen=True, slots=True)

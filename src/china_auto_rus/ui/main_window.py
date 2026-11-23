@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from enum import StrEnum
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, QUrl
@@ -39,7 +40,7 @@ from PySide6.QtWidgets import (
 )
 
 from china_auto_rus import __version__
-from china_auto_rus.config import APP_NAME, DEFAULT_PROFILE, REPORTS_DIR
+from china_auto_rus.config import APP_NAME, get_reports_dir
 from china_auto_rus.core.models import (
     AnalysisReport,
     FileEntry,
@@ -48,6 +49,7 @@ from china_auto_rus.core.models import (
     Stage,
 )
 from china_auto_rus.core.report import human_size, save_report
+from china_auto_rus.profiles import default_profile
 from china_auto_rus.ui.file_models import (
     FileTableModel,
     build_tree_model,
@@ -58,6 +60,15 @@ from china_auto_rus.ui.workers import AnalysisWorker
 logger = logging.getLogger(__name__)
 
 
+class AnalysisState(StrEnum):
+    """Явное состояние фонового анализа."""
+
+    IDLE = "idle"
+    RUNNING = "running"
+    CANCELLING = "cancelling"
+    FINISHED = "finished"
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -65,8 +76,13 @@ class MainWindow(QMainWindow):
         self._insights: dict[str, FileInsight] = {}
         self._thread: QThread | None = None
         self._worker: AnalysisWorker | None = None
+        self._state = AnalysisState.IDLE
+        self._pending_report: AnalysisReport | None = None
+        self._pending_error: str | None = None
+        self._close_requested = False
+        self._profile = default_profile()
 
-        self.setWindowTitle(f"{APP_NAME} — {DEFAULT_PROFILE.display_name}")
+        self.setWindowTitle(f"{APP_NAME} — {self._profile.display_name}")
         self.setMinimumSize(1000, 650)
         self.resize(1280, 820)
         self.setAcceptDrops(True)
@@ -76,6 +92,11 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         self._build_central()
         self._build_statusbar()
+
+    @property
+    def state(self) -> AnalysisState:
+        """Текущее состояние анализа (для тестов и диагностики)."""
+        return self._state
 
     # ---------- построение интерфейса ----------
 
@@ -233,11 +254,15 @@ class MainWindow(QMainWindow):
             self._start_analysis([Path(folder)])
 
     def _start_analysis(self, paths: list[Path]) -> None:
+        # Новый анализ разрешён только после полной остановки предыдущего потока.
+        if self._state not in (AnalysisState.IDLE, AnalysisState.FINISHED):
+            return
         if self._thread is not None or not paths:
             return
 
         self._clear_results()
-        self._set_busy(True)
+        self._state = AnalysisState.RUNNING
+        self._update_actions()
         self.status_label.setText("Сканирование…")
         self.progress.setRange(0, 0)
 
@@ -250,14 +275,21 @@ class MainWindow(QMainWindow):
         self._worker.progress.connect(self._on_progress)
         self._worker.finished.connect(self._on_finished)
         self._worker.failed.connect(self._on_failed)
+        # Worker живёт в потоке: deleteLater должен выполниться в нём,
+        # пока event loop ещё работает.
+        self._worker.done.connect(self._worker.deleteLater)
+        # QThread удаляем только внутри _on_thread_finished после wait():
+        # сигнал finished приходит ещё до снятия флага running, и прямой
+        # finished → deleteLater может дать qFatal «Destroyed while running».
         self._thread.finished.connect(self._on_thread_finished)
         self._thread.start()
 
     def _cancel_analysis(self) -> None:
-        if self._worker is None:
+        if self._state is not AnalysisState.RUNNING or self._worker is None:
             return
+        self._state = AnalysisState.CANCELLING
         self._worker.cancel()
-        self.action_cancel.setEnabled(False)
+        self._update_actions()
         self.status_label.setText("Останавливаю после текущего файла…")
 
     # ---------- сигналы worker ----------
@@ -278,26 +310,47 @@ class MainWindow(QMainWindow):
         )
 
     def _on_finished(self, report: AnalysisReport) -> None:
-        if self._thread is not None:
+        # Показываем отчёт только после остановки потока и очистки ссылок,
+        # чтобы кнопки не стали активными раньше времени.
+        self._pending_report = report
+        if self._thread is not None and self._thread.isRunning():
             self._thread.quit()
-        self._display_report(report)
 
     def _on_failed(self, message: str) -> None:
-        if self._thread is not None:
+        self._pending_error = message
+        if self._thread is not None and self._thread.isRunning():
             self._thread.quit()
-        self._set_busy(False)
-        self.progress.setRange(0, 1)
-        self.progress.setValue(0)
-        self.status_label.setText("Ошибка анализа")
-        QMessageBox.critical(self, "Ошибка анализа", message)
 
     def _on_thread_finished(self) -> None:
-        if self._worker is not None:
-            self._worker.deleteLater()
-        if self._thread is not None:
-            self._thread.deleteLater()
+        thread = self._thread
+        if thread is not None:
+            # finished приходит до полного выхода из потока. Короткий wait()
+            # здесь практически мгновенный и убирает гонку с удалением QThread.
+            thread.wait()
+
+        report = self._pending_report
+        error = self._pending_error
+        self._pending_report = None
+        self._pending_error = None
         self._worker = None
         self._thread = None
+        self._state = AnalysisState.FINISHED
+
+        if report is not None:
+            self._display_report(report)
+        elif error is not None:
+            self._update_actions()
+            self.progress.setRange(0, 1)
+            self.progress.setValue(0)
+            self.status_label.setText("Ошибка анализа")
+            QMessageBox.critical(self, "Ошибка анализа", error)
+
+        if thread is not None:
+            thread.deleteLater()
+
+        if self._close_requested and self._thread is None:
+            self._close_requested = False
+            self.close()
 
     # ---------- отображение результата ----------
 
@@ -309,7 +362,7 @@ class MainWindow(QMainWindow):
         self._set_tree_model(build_tree_model(report))
         self.tree.expandToDepth(0)
         self._fill_errors(report)
-        self._set_busy(False)
+        self._update_actions()
         self.preview.clear()
 
         self.progress.setRange(0, 1)
@@ -381,6 +434,9 @@ class MainWindow(QMainWindow):
         if insight is not None:
             if insight.encoding:
                 lines.append(f"Кодировка: {insight.encoding}")
+            if insight.encoding_confidence.value == "low":
+                candidates = ", ".join(insight.encoding_candidates) or "нет вариантов"
+                lines.append(f"Уверенность: низкая ({candidates})")
             for note in insight.notes:
                 lines.append(f"Примечание: {note}")
             if insight.archive_entries:
@@ -413,23 +469,25 @@ class MainWindow(QMainWindow):
         )
 
     def _open_reports_folder(self) -> None:
-        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(REPORTS_DIR)))
+        reports_dir = get_reports_dir()
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(reports_dir)))
 
     def _show_about(self) -> None:
         QMessageBox.about(
             self,
             "О программе",
             f"<b>{APP_NAME}</b> {__version__}<br>"
-            f"Профиль: {DEFAULT_PROFILE.display_name}<br><br>"
+            f"Профиль: {self._profile.display_name}<br><br>"
             "Режим только для чтения. Без подключения к автомобилю.",
         )
 
-    def _set_busy(self, busy: bool) -> None:
+    def _update_actions(self) -> None:
+        busy = self._state in (AnalysisState.RUNNING, AnalysisState.CANCELLING)
         self.action_open_file.setEnabled(not busy)
         self.action_open_folder.setEnabled(not busy)
         self.hash_checkbox.setEnabled(not busy)
-        self.action_cancel.setEnabled(busy)
+        self.action_cancel.setEnabled(self._state is AnalysisState.RUNNING)
         self.action_save.setEnabled(not busy and self._report is not None)
 
     # ---------- drag & drop ----------
@@ -451,7 +509,12 @@ class MainWindow(QMainWindow):
     # ---------- закрытие ----------
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        if self._thread is not None and self._thread.isRunning():
+        busy = self._state in (AnalysisState.RUNNING, AnalysisState.CANCELLING)
+        if not busy or self._thread is None:
+            event.accept()
+            return
+
+        if not self._close_requested:
             answer = QMessageBox.question(
                 self,
                 "Анализ выполняется",
@@ -460,19 +523,19 @@ class MainWindow(QMainWindow):
             if answer != QMessageBox.StandardButton.Yes:
                 event.ignore()
                 return
+            self._close_requested = True
+            if self._state is AnalysisState.RUNNING:
+                self._cancel_analysis()
 
-            if self._worker is not None:
-                self._worker.cancel()
+        # Пока показывался диалог, анализ мог завершиться — проверяем ссылку снова.
+        if self._thread is None:
+            self._close_requested = False
+            event.accept()
+            return
+
+        # Не блокируем GUI ожиданием потока: окно закроется само,
+        # когда _on_thread_finished получит сигнал finished.
+        if self._thread.isRunning():
             self._thread.quit()
-            if not self._thread.wait(5000):
-                QMessageBox.warning(
-                    self,
-                    "Анализ",
-                    "Не удалось остановить анализ. Дождитесь завершения текущего файла.",
-                )
-                event.ignore()
-                return
-            self._worker = None
-            self._thread = None
-
-        event.accept()
+        self.status_label.setText("Закрытие после остановки анализа…")
+        event.ignore()

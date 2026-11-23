@@ -1,56 +1,90 @@
-"""Конфигурация приложения: пути, профиль автомобиля, версия."""
+"""Конфигурация приложения: пути, версия.
+
+Профиль автомобиля здесь больше не живёт: модели — данные, они лежат
+в пакете :mod:`china_auto_rus.profiles` и в пользовательском каталоге.
+
+Пути делятся на две группы:
+
+* ``PROJECT_ROOT`` — исходный код и ресурсы. Сюда ничего не пишем.
+* ``USER_DATA_DIR`` — отчёты, логи и настройки пользователя. По умолчанию
+  это ``%LOCALAPPDATA%\\CHINA_AUTO_RUS``, а при отсутствии переменной —
+  портативный fallback рядом с домашним каталогом.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import os
 from pathlib import Path
 
 APP_NAME = "CHINA AUTO RUS"
 APP_VERSION = "0.1.0"
+APP_DIR_NAME = "CHINA_AUTO_RUS"
 
-# Корень репозитория: src/china_auto_rus/config.py -> parents[2]
+# Корень репозитория: src/china_auto_rus/config.py -> parents[2].
+# Используется только для чтения исходников и ресурсов.
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE_DIR = PROJECT_ROOT / "workspace"
-REPORTS_DIR = WORKSPACE_DIR / "reports"
-LOGS_DIR = PROJECT_ROOT / "logs"
+
+
+def _default_user_data_dir() -> Path:
+    """Каталог пользовательских данных без обращения к каталогу установки."""
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        return Path(local_app_data) / APP_DIR_NAME
+    # LOCALAPPDATA может отсутствовать в тестах и на не-Windows системах.
+    return Path.home() / ".local" / "share" / APP_DIR_NAME
+
+
+USER_DATA_DIR = _default_user_data_dir()
+REPORTS_DIR = USER_DATA_DIR / "reports"
+LOGS_DIR = USER_DATA_DIR / "logs"
+SETTINGS_DIR = USER_DATA_DIR / "settings"
 LOG_FILE = LOGS_DIR / "app.log"
 
+# Пользовательские профили автомобилей: JSON-файлы, без правки кода.
+PROFILES_DIR = USER_DATA_DIR / "profiles"
 
-@dataclass(frozen=True, slots=True)
-class CarProfile:
-    """Описание исследуемого автомобиля.
-
-    Неустановленные характеристики остаются None: мы не выдумываем данные
-    о мультимедиа и аппаратной платформе.
-    """
-
-    id: str
-    brand: str
-    model: str
-    year: int
-    market: str
-    trim: str
-    head_unit: str | None = None
-    hardware_platform: str | None = None
-    notes: str = ""
-
-    @property
-    def display_name(self) -> str:
-        return f"{self.brand} {self.model} {self.year} ({self.market})"
+# Оставлено для совместимости: рабочие файлы тоже живут у пользователя.
+WORKSPACE_DIR = USER_DATA_DIR / "workspace"
 
 
-DEFAULT_PROFILE = CarProfile(
-    id="deepal-s07-2026-cn-restyling",
-    brand="Changan",
-    model="Deepal S07",
-    year=2026,
-    market="CN",
-    trim="рестайлинг",
-    notes="Версия мультимедиа и аппаратная платформа не подтверждены.",
-)
+def get_user_data_dir() -> Path:
+    return USER_DATA_DIR
+
+
+def get_reports_dir() -> Path:
+    """Актуальный каталог отчётов (учитывает подмену в тестах)."""
+    return REPORTS_DIR
+
+
+def get_logs_dir() -> Path:
+    return LOGS_DIR
+
+
+def get_settings_dir() -> Path:
+    """Настройки всегда рядом с отчётами — в каталоге пользовательских данных."""
+    return get_reports_dir().parent / "settings"
+
+
+def get_log_file() -> Path:
+    return LOG_FILE
+
+
+def get_workspace_dir() -> Path:
+    return WORKSPACE_DIR
+
+
+def get_profiles_dir() -> Path:
+    """Каталог пользовательских профилей автомобилей (JSON)."""
+    return PROFILES_DIR
 
 
 def ensure_directories() -> None:
-    """Создаёт рабочие каталоги приложения."""
-    for path in (WORKSPACE_DIR, REPORTS_DIR, LOGS_DIR):
+    """Создаёт только пользовательские каталоги, без записи в каталог установки."""
+    for path in (
+        get_reports_dir(),
+        get_logs_dir(),
+        get_settings_dir(),
+        get_workspace_dir(),
+        get_profiles_dir(),
+    ):
         path.mkdir(parents=True, exist_ok=True)

@@ -22,6 +22,7 @@ desktop.ini
 .env
 logs/
 workspace/
+dump/
 
 # Firmware and binary artifacts must never be committed
 *.apk

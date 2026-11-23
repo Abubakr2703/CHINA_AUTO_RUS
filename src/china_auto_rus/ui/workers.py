@@ -19,12 +19,19 @@ class AnalysisWorker(QObject):
     progress = Signal(object)  # ProgressEvent
     finished = Signal(object)  # AnalysisReport
     failed = Signal(str)
+    # Гарантированно испускается после finished/failed — служит для очистки worker.
+    done = Signal()
 
     def __init__(self, paths: list[Path], *, compute_hashes: bool = True) -> None:
         super().__init__()
         self._paths = paths
         self._compute_hashes = compute_hashes
         self._cancelled = False
+
+    @property
+    def cancelled(self) -> bool:
+        """Признак запрошенной отмены (для тестов и состояния окна)."""
+        return self._cancelled
 
     def cancel(self) -> None:
         self._cancelled = True
@@ -40,8 +47,10 @@ class AnalysisWorker(QObject):
         except Exception as exc:  # граница потока: не даём упасть приложению
             logger.exception("Неожиданная ошибка анализа")
             self.failed.emit(str(exc))
-            return
-        self.finished.emit(report)
+        else:
+            self.finished.emit(report)
+        finally:
+            self.done.emit()
 
     def _emit_progress(self, event: ProgressEvent) -> None:
         self.progress.emit(event)
