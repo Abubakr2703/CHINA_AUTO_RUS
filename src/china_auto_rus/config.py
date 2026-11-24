@@ -16,8 +16,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from china_auto_rus import __version__
+
 APP_NAME = "CHINA AUTO RUS"
-APP_VERSION = "0.1.0"
+APP_VERSION = __version__
 APP_DIR_NAME = "CHINA_AUTO_RUS"
 
 # Корень репозитория: src/china_auto_rus/config.py -> parents[2].

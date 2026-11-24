@@ -77,8 +77,10 @@ def test_resource_candidate_filter() -> None:
     assert is_resource_candidate("res/values/strings.xml")
     assert is_resource_candidate("values-ru/strings.xml")
     assert is_resource_candidate("assets/lang/ru.json")
+    # Бинарный XML теперь тоже источник строк (AndroidManifest, layout).
+    assert is_resource_candidate("AndroidManifest.xml")
+    assert is_resource_candidate("res/layout/main.xml")
     assert not is_resource_candidate("res/drawable/icon.png")
-    assert not is_resource_candidate("AndroidManifest.xml")
 
 
 def test_parse_xml_strings_extracts_keys() -> None:

@@ -1,17 +1,19 @@
 """Извлечение языковых ресурсов: ключ → текст → язык. Только чтение.
 
-Модуль понимает три источника текста, которые встречаются в Android-ГУ:
+Модуль понимает четыре источника текста, которые встречаются в Android-ГУ:
 
 * бинарную таблицу ``resources.arsc`` внутри APK — основной источник строк
   системных приложений;
 * XML-ресурсы Android (``res/values/strings.xml`` и локализованные
   ``res/values-<язык>/strings.xml``);
+* бинарный AXML (``AndroidManifest.xml``, ``res/layout/*.xml``), где текст
+  часто лежит прямо в атрибутах элемента;
 * JSON-файлы локализации (``assets/lang/ru.json``, ``i18n/zh-CN.json``).
 
 Плюс обратный импорт уже переведённой таблицы CSV.
 
-Сжатый ``AndroidManifest.xml`` (бинарный AXML) здесь не разбирается: его
-строки почти не участвуют в интерфейсе, а формат требует отдельного парсера.
+Не разбираются составные ресурсы (массивы и стили из ARSC) и DEX:
+это отдельные форматы со своими правилами.
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 from china_auto_rus.core.arsc import parse_arsc
+from china_auto_rus.core.axml import is_axml, parse_axml
 from china_auto_rus.core.locale import (
     DEFAULT_LANGUAGE,
     is_known_language,
@@ -111,7 +114,23 @@ def is_resource_candidate(name: str) -> bool:
     normalized = name.replace("\\", "/")
     if normalized.endswith(".json"):
         return True
-    return bool(_ANDROID_VALUES.search(normalized))
+    if _ANDROID_VALUES.search(normalized):
+        return True
+    return _is_compiled_xml(normalized)
+
+
+def _is_compiled_xml(normalized: str) -> bool:
+    """XML внутри ``res/`` — кандидат: там и layout, и бинарный манифест.
+
+    Проверяем только путь: обфусцированные имена вроде ``res/0L.xml``
+    (aapt2 --shorten-resource-paths) тоже надо поймать, а содержимое
+    определит ``parse_resource_bytes``.
+    """
+    if normalized.rsplit("/", 1)[-1] == "AndroidManifest.xml":
+        return True
+    if not normalized.endswith(".xml"):
+        return False
+    return "res" in normalized.split("/")[:-1]
 
 
 def _xml_text(element: ElementTree.Element) -> str:
@@ -201,14 +220,41 @@ def parse_json_strings(
     return ResourceFile(source, language, entries)
 
 
+def parse_axml_strings(
+    data: bytes,
+    *,
+    source: str,
+    language: str = DEFAULT_LANGUAGE,
+) -> ResourceFile:
+    """Строковые атрибуты бинарного XML: ``android:text`` и подобные.
+
+    Ключ включает индекс элемента: один и тот же ``TextView`` встречается
+    в layout десятки раз, и без индекса строки схлопнулись бы.
+    """
+    document = parse_axml(data)
+    entries = tuple(
+        ResourceEntry(
+            key=f"{element.name}[{index}]/{attribute.name}",
+            text=attribute.value,
+            language=language,
+            source=source,
+        )
+        for index, element in enumerate(document.elements)
+        for attribute in element.attributes
+    )
+    return ResourceFile(source, language, entries, document.notes)
+
+
 def parse_resource_bytes(
     data: bytes,
     *,
     source: str,
     language: str | None = None,
 ) -> ResourceFile:
-    """Выбирает парсер по расширению источника."""
+    """Выбирает парсер по содержимому: AXML, JSON или обычный XML."""
     resolved = language or language_from_path(source)
+    if is_axml(data):
+        return parse_axml_strings(data, source=source, language=resolved)
     if source.lower().endswith(".json"):
         return parse_json_strings(data, source=source, language=resolved)
     return parse_xml_strings(data, source=source, language=resolved)

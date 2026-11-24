@@ -4,7 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "china-auto-rus"
-version = "0.1.0"
+# Версия живёт в одном месте: china_auto_rus/__init__.py.
+dynamic = ["version"]
 description = "Windows-инструмент для исследования и русификации мультимедиа китайских автомобилей"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -25,6 +26,9 @@ china-auto-rus = "china_auto_rus.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.dynamic]
+version = { attr = "china_auto_rus.__version__" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
