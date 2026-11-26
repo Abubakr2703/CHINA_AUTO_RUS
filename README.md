@@ -261,7 +261,7 @@ python -m china_auto_rus --check-translations ru.csv
 | Документ | Содержание |
 |---|---|
 | [docs/head_unit.md](docs/head_unit.md) | паспорт ГУ, инженерное меню, выгрузка логов, ограничения |
-| [docs/head_unit_logs.md](docs/head_unit_logs.md) | первая выгрузка логов: структура, Android 13, ~60 пакетов, найденные APK |
+| [docs/head_unit_logs.md](docs/head_unit_logs.md) | первая выгрузка логов: Android 13, ~60 пакетов, SELinux, ADB, найденные APK |
 | [docs/russification.md](docs/russification.md) | план русификации: RRO → правка ARSC → замена, откат и риски |
 | [docs/audit.md](docs/audit.md) | аудит проекта |
 | [docs/fixes-report.md](docs/fixes-report.md) | отчёт по исправлениям |
