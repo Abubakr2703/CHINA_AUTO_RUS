@@ -55,6 +55,7 @@ from china_auto_rus.ui.file_models import (
     build_tree_model,
     empty_tree_model,
 )
+from china_auto_rus.ui.russification_tab import RussificationTab
 from china_auto_rus.ui.workers import AnalysisWorker
 
 logger = logging.getLogger(__name__)
@@ -206,13 +207,16 @@ class MainWindow(QMainWindow):
 
         self.errors_list = QListWidget()
 
+        self.russification = RussificationTab()
+
         self.tabs = QTabWidget()
         self.tabs.addTab(self.table, "Файлы")
         self.tabs.addTab(self.tree, "Дерево")
         self.tabs.addTab(self.errors_list, "Ошибки")
+        self.tabs.addTab(self.russification, "Русификация")
 
-        preview_widget = QWidget()
-        preview_layout = QVBoxLayout(preview_widget)
+        self.preview_widget = QWidget()
+        preview_layout = QVBoxLayout(self.preview_widget)
         preview_layout.setContentsMargins(0, 0, 0, 0)
         preview_layout.addWidget(QLabel("Предпросмотр"))
         self.preview = QPlainTextEdit()
@@ -224,12 +228,19 @@ class MainWindow(QMainWindow):
         preview_layout.addWidget(self.preview)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+
         splitter.addWidget(self.tabs)
-        splitter.addWidget(preview_widget)
+        splitter.addWidget(self.preview_widget)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
         splitter.setSizes([760, 480])
         self.setCentralWidget(splitter)
+
+    def _on_tab_changed(self, index: int) -> None:
+        # У вкладки русификации своя область: предпросмотр ей не нужен.
+        current = self.tabs.widget(index)
+        self.preview_widget.setVisible(current is not self.russification)
 
     def _build_statusbar(self) -> None:
         self.status_label = QLabel("Готов")
@@ -509,6 +520,12 @@ class MainWindow(QMainWindow):
     # ---------- закрытие ----------
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        # Операция русификации неделима: закрываемся только после её конца.
+        if not self.russification.shutdown():
+            self.status_label.setText("Операция ещё выполняется…")
+            event.ignore()
+            return
+
         busy = self._state in (AnalysisState.RUNNING, AnalysisState.CANCELLING)
         if not busy or self._thread is None:
             event.accept()

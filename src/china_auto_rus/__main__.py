@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import platform
+import shutil
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -78,6 +79,18 @@ def _pyside6_version() -> str:
     return PySide6.__version__
 
 
+APK_TOOLS = ("java", "apksigner", "zipalign", "aapt2", "adb")
+
+
+def _apk_toolchain() -> str:
+    """Наличие внешних инструментов для подписи и установки APK."""
+    found = [name for name in APK_TOOLS if shutil.which(name)]
+    missing = [name for name in APK_TOOLS if name not in found]
+    if not missing:
+        return "все на месте: " + ", ".join(found)
+    return "нет: " + ", ".join(missing)
+
+
 def _run_check() -> int:
     """Печатает состояние окружения. Полезно для диагностики на Windows."""
     ensure_directories()
@@ -90,6 +103,7 @@ def _run_check() -> int:
     print(f"Профили:  {get_profiles_dir()}")
     print(f"Workspace: {get_workspace_dir()}")
     print(f"Лог:       {get_log_file()}")
+    print(f"APK-инструменты: {_apk_toolchain()}")
     return 0
 
 
