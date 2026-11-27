@@ -355,6 +355,23 @@ def check_translations(
     )
 
 
+def build_replacements(rows: Iterable[TranslationRow]) -> dict[str, str]:
+    """Карта «оригинал → перевод» для замены строк в resources.arsc.
+
+    Пустые переводы и строки без изменений пропускаются. Если один оригинал
+    встретился несколько раз, побеждает первый: шаблон дедуплицирован,
+    а расхождения лучше ловить через ``check_translations``.
+    """
+    replacements: dict[str, str] = {}
+    for row in rows:
+        if not row.original or not row.translation.strip():
+            continue
+        if row.original == row.translation:
+            continue
+        replacements.setdefault(row.original, row.translation)
+    return replacements
+
+
 def apply_translations(
     rows: Iterable[TranslationRow],
 ) -> tuple[ResourceEntry, ...]:

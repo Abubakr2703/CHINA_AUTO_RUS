@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -9,6 +10,8 @@ import pytest
 
 import china_auto_rus.__main__ as main_module
 from china_auto_rus import config
+from china_auto_rus.core.arsc import parse_arsc
+from tests.arsc_fixture import build_sample
 
 
 def _isolate_main(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -262,3 +265,88 @@ def test_unknown_profile_is_rejected(
 
     assert "Профиль не найден: nope" in capsys.readouterr().err
 
+
+
+def _write_source_apk(path: Path) -> None:
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("AndroidManifest.xml", b"manifest")
+        archive.writestr("resources.arsc", build_sample())
+
+
+def test_build_apk_mode_writes_translated_apk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_main(monkeypatch)
+    apk = tmp_path / "app.apk"
+    _write_source_apk(apk)
+    translations = tmp_path / "ru.csv"
+    translations.write_text(
+        """source,key,original,translation
+zh-CN,string/settings_title,设置,Параметры
+""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "out.apk"
+
+    code = main_module.main(
+        [
+            "--build-apk",
+            str(apk),
+            "--translations",
+            str(translations),
+            "--output",
+            str(output),
+        ]
+    )
+
+    assert code == 0
+    assert output.is_file()
+    with zipfile.ZipFile(output) as archive:
+        table = parse_arsc(archive.read("resources.arsc"))
+    assert "Параметры" in {entry.text for entry in table.entries}
+    with zipfile.ZipFile(apk) as original:
+        assert "Параметры" not in {
+            entry.text
+            for entry in parse_arsc(original.read("resources.arsc")).entries
+        }
+
+
+def test_build_apk_requires_translations_and_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_main(monkeypatch)
+    apk = tmp_path / "app.apk"
+    _write_source_apk(apk)
+
+    assert main_module.main(["--build-apk", str(apk)]) == 2
+
+
+def test_build_apk_refuses_to_overwrite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_main(monkeypatch)
+    apk = tmp_path / "app.apk"
+    _write_source_apk(apk)
+    translations = tmp_path / "ru.csv"
+    translations.write_text(
+        """source,key,original,translation
+zh-CN,string/settings_title,设置,Параметры
+""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "out.apk"
+    output.write_bytes(b"old")
+
+    code = main_module.main(
+        [
+            "--build-apk",
+            str(apk),
+            "--translations",
+            str(translations),
+            "--output",
+            str(output),
+        ]
+    )
+
+    assert code == 1
+    assert output.read_bytes() == b"old"

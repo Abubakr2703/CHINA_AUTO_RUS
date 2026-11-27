@@ -18,6 +18,7 @@ from china_auto_rus.config import (
     get_workspace_dir,
 )
 from china_auto_rus.core.analyzer import analyze_paths
+from china_auto_rus.core.build import BuildError, build_apk
 from china_auto_rus.core.report import human_size, save_report
 from china_auto_rus.core.resources import export_csv, extract_resources
 from china_auto_rus.core.strings import contains_cjk, extract_strings_from_file
@@ -203,6 +204,76 @@ def _issue_label(issue: TranslationIssue) -> str:
     return f"{issue.source}:{issue.key}" if issue.source else issue.key
 
 
+def _run_build_apk(
+    apk_path: Path,
+    translations_path: Path,
+    output_path: Path,
+    *,
+    force: bool,
+) -> int:
+    """Собирает APK с переведёнными строками. Оригинал не меняется."""
+    if not apk_path.is_file():
+        print(f"APK не найден: {apk_path}", file=sys.stderr)
+        return 1
+    if not translations_path.is_file():
+        print(f"Шаблон не найден: {translations_path}", file=sys.stderr)
+        return 1
+    if output_path.exists() and not force:
+        print(
+            f"Файл уже существует: {output_path}\n"
+            "Укажи другой --output или добавь --force, чтобы перезаписать.",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        rows = read_translation_csv(translations_path)
+    except (OSError, ValueError) as error:
+        print(f"Шаблон не читается: {error}", file=sys.stderr)
+        return 1
+
+    report = check_translations(rows)
+    if report.errors:
+        print(
+            f"В шаблоне ошибок: {len(report.errors)} — сборка отменена.",
+            file=sys.stderr,
+        )
+        for issue in report.errors[:10]:
+            print(f"  ! {_issue_label(issue)}: {issue.message}", file=sys.stderr)
+        return 1
+
+    try:
+        result = build_apk(apk_path.read_bytes(), rows)
+    except (BuildError, OSError) as error:
+        print(f"Сборка не удалась: {error}", file=sys.stderr)
+        return 1
+
+    if result.changed_entries == 0:
+        print(
+            "Ни одна строка не совпала с таблицей APK. "
+            "Проверь, что шаблон снят с этого же APK.",
+            file=sys.stderr,
+        )
+        return 1
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(result.apk)
+
+    print(f"APK: {apk_path}")
+    print(f"Строк в таблице: {result.entries}")
+    print(f"Переводов в шаблоне: {result.replacements}")
+    print(f"Изменено записей: {result.changed_entries}")
+    if result.missing:
+        print(f"Не найдено в APK: {len(result.missing)}, например:")
+        for text in result.missing[:5]:
+            print(f"  - {text[:60]}")
+    print(f"Результат: {output_path} ({human_size(len(result.apk))})")
+    print("")
+    print("APK не подписан. Перед установкой: zipalign -p 4, затем apksigner.")
+    print("Оригинальный APK не изменялся.")
+    return 0
+
+
 def _run_check_translations(path: Path) -> int:
     """Проверяет заполненный шаблон и печатает прогресс перевода."""
     if not path.is_file():
@@ -308,6 +379,29 @@ def main(argv: list[str] | None = None) -> int:
         metavar="PATH",
         help="проверить заполненный шаблон перевода и показать прогресс",
     )
+    parser.add_argument(
+        "--build-apk",
+        type=Path,
+        metavar="APK",
+        help="собрать APK с переводом (нужны --translations и --output)",
+    )
+    parser.add_argument(
+        "--translations",
+        type=Path,
+        metavar="CSV",
+        help="заполненный шаблон перевода для --build-apk",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        metavar="PATH",
+        help="куда записать собранный APK",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="перезаписать --output, если файл уже существует",
+    )
     args = parser.parse_args(argv)
 
     _configure_console()
@@ -346,6 +440,20 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.check_translations is not None:
         return _run_check_translations(args.check_translations)
+
+    if args.build_apk is not None:
+        if args.translations is None or args.output is None:
+            print(
+                "--build-apk требует --translations и --output",
+                file=sys.stderr,
+            )
+            return 2
+        return _run_build_apk(
+            args.build_apk,
+            args.translations,
+            args.output,
+            force=args.force,
+        )
 
     try:
         run_gui = _load_gui()
