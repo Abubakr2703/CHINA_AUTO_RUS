@@ -350,3 +350,74 @@ zh-CN,string/settings_title,设置,Параметры
 
     assert code == 1
     assert output.read_bytes() == b"old"
+
+
+def test_rro_mode_writes_overlay_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_main(monkeypatch)
+    translations = tmp_path / "ru.csv"
+    translations.write_text(
+        """source,key,original,translation
+zh-CN,string/settings_title,设置,Параметры
+""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "overlay"
+
+    code = main_module.main(
+        [
+            "--rro",
+            "com.example.app",
+            "--translations",
+            str(translations),
+            "--output",
+            str(output),
+        ]
+    )
+
+    assert code == 0
+    manifest = (output / "AndroidManifest.xml").read_text(encoding="utf-8")
+    strings = (output / "res" / "values-ru" / "strings.xml").read_text(
+        encoding="utf-8"
+    )
+    assert 'android:targetPackage="com.example.app"' in manifest
+    assert "Параметры" in strings
+
+
+def test_rro_requires_translations_and_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_main(monkeypatch)
+
+    assert main_module.main(["--rro", "com.example.app"]) == 2
+
+
+def test_rro_refuses_to_overwrite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_main(monkeypatch)
+    translations = tmp_path / "ru.csv"
+    translations.write_text(
+        """source,key,original,translation
+zh-CN,string/settings_title,设置,Параметры
+""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "overlay"
+    output.mkdir()
+    (output / "AndroidManifest.xml").write_text("old", encoding="utf-8")
+
+    code = main_module.main(
+        [
+            "--rro",
+            "com.example.app",
+            "--translations",
+            str(translations),
+            "--output",
+            str(output),
+        ]
+    )
+
+    assert code == 1
+    assert (output / "AndroidManifest.xml").read_text(encoding="utf-8") == "old"

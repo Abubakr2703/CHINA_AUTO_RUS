@@ -4,9 +4,8 @@ Windows-приложение для исследования и последую
 китайских автомобилей. Первый профиль — **Changan Deepal S07 2026, китайская версия,
 рестайлинг**.
 
-> Статус: **Этап 3.2 — APK собирается с переводом**. Пересборка ARSC проверена
-> байт-в-байт на F-Droid и NewPipe, замена `resources.arsc` в архиве проверена.
-> Дальше — RRO-оверлей и интерфейс.
+> Статус: **Этап 3.3 — RRO-оверлей собирается из шаблона**. Есть две сборки:
+> переписанный APK и исходники оверлея. Дальше — интерфейс русификации.
 
 ## Задачи MVP
 
@@ -254,8 +253,11 @@ python -m china_auto_rus --resources "C:\dump\app.apk" --translation-csv ru.csv
 # 5. Проверка: плейсхолдеры, теги, прогресс
 python -m china_auto_rus --check-translations ru.csv
 
-# 6. Сборка APK с переводом (оригинал не меняется)
+# 6a. Вариант 1: APK с переписанным resources.arsc (подпись ломается)
 python -m china_auto_rus --build-apk app.apk --translations ru.csv --output app-ru.apk
+
+# 6b. Вариант 2: исходники RRO-оверлея (оригинал не трогаем)
+python -m china_auto_rus --rro com.mega.carsettings --translations ru.csv --output overlay/
 ```
 
 Шаг 5 возвращает `0`, только если ошибок нет: это условие для будущей
@@ -296,6 +298,6 @@ python -m china_auto_rus --build-apk app.apk --translations ru.csv --output app-
 - [x] Этап 2.8: бинарный AXML — манифест и layout, текст из атрибутов
 - [x] Этап 3.1: запись `resources.arsc` — пул строк и замена значений
 - [x] Этап 3.2: сборка APK — замена `resources.arsc` внутри архива
-- [ ] Этап 3.3: RRO-оверлей из шаблона перевода
+- [x] Этап 3.3: RRO-оверлей из шаблона перевода
 - [ ] Этап 3.4: интерфейс русификации
 - [ ] Этап 4: установка на ГУ, проверка и откат

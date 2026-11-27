@@ -21,6 +21,7 @@ from china_auto_rus.core.analyzer import analyze_paths
 from china_auto_rus.core.build import BuildError, build_apk
 from china_auto_rus.core.report import human_size, save_report
 from china_auto_rus.core.resources import export_csv, extract_resources
+from china_auto_rus.core.rro import RroError, build_overlay, write_overlay
 from china_auto_rus.core.strings import contains_cjk, extract_strings_from_file
 from china_auto_rus.core.translation import (
     TranslationIssue,
@@ -274,6 +275,72 @@ def _run_build_apk(
     return 0
 
 
+def _run_build_rro(
+    target_package: str,
+    translations_path: Path,
+    output_dir: Path,
+    *,
+    force: bool,
+) -> int:
+    """Готовит исходники RRO-оверлея из шаблона перевода."""
+    if not translations_path.is_file():
+        print(f"Шаблон не найден: {translations_path}", file=sys.stderr)
+        return 1
+    manifest_path = output_dir / "AndroidManifest.xml"
+    if manifest_path.exists() and not force:
+        print(
+            f"Оверлей уже есть: {output_dir}\n"
+            "Укажи другой --output или добавь --force, чтобы перезаписать.",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        rows = read_translation_csv(translations_path)
+    except (OSError, ValueError) as error:
+        print(f"Шаблон не читается: {error}", file=sys.stderr)
+        return 1
+
+    report = check_translations(rows)
+    if report.errors:
+        print(
+            f"В шаблоне ошибок: {len(report.errors)} — оверлей не собран.",
+            file=sys.stderr,
+        )
+        for issue in report.errors[:10]:
+            print(f"  ! {_issue_label(issue)}: {issue.message}", file=sys.stderr)
+        return 1
+
+    try:
+        overlay = build_overlay(target_package, rows)
+        manifest_path, strings_path = write_overlay(overlay, output_dir)
+    except (RroError, OSError) as error:
+        print(f"Оверлей не собран: {error}", file=sys.stderr)
+        return 1
+
+    print(f"Пакет-цель: {overlay.target_package}")
+    print(f"Пакет оверлея: {overlay.package}")
+    print(f"Строк в оверлее: {overlay.strings}")
+    if overlay.skipped:
+        print(f"Пропущено: {len(overlay.skipped)}, например:")
+        for item in overlay.skipped[:5]:
+            print(f"  - {item}")
+    print(f"Манифест: {manifest_path}")
+    print(f"Строки:   {strings_path}")
+    print("")
+    print("Сборка оверлея (внешние инструменты):")
+    print("  aapt2 compile --dir res -o compiled.zip")
+    print(
+        "  aapt2 link -o overlay.apk -I android.jar "
+        "--manifest AndroidManifest.xml compiled.zip"
+    )
+    print("  zipalign -p 4 overlay.apk overlay-aligned.apk")
+    print("  apksigner sign --ks keystore.jks overlay-aligned.apk")
+    print("")
+    print("Оверлей не накроет системное приложение с подписью производителя.")
+    return 0
+
+
 def _run_check_translations(path: Path) -> int:
     """Проверяет заполненный шаблон и печатает прогресс перевода."""
     if not path.is_file():
@@ -392,10 +459,15 @@ def main(argv: list[str] | None = None) -> int:
         help="заполненный шаблон перевода для --build-apk",
     )
     parser.add_argument(
+        "--rro",
+        metavar="PACKAGE",
+        help="собрать исходники RRO-оверлея для пакета (нужны --translations и --output)",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         metavar="PATH",
-        help="куда записать собранный APK",
+        help="куда записать APK (--build-apk) или папку оверлея (--rro)",
     )
     parser.add_argument(
         "--force",
@@ -450,6 +522,20 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         return _run_build_apk(
             args.build_apk,
+            args.translations,
+            args.output,
+            force=args.force,
+        )
+
+    if args.rro is not None:
+        if args.translations is None or args.output is None:
+            print(
+                "--rro требует --translations и --output",
+                file=sys.stderr,
+            )
+            return 2
+        return _run_build_rro(
+            args.rro,
             args.translations,
             args.output,
             force=args.force,
