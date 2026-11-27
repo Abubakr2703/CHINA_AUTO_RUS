@@ -37,6 +37,8 @@ _TYPE_FLAG_OFFSET16 = 0x02
 
 # Флаг «запись составная»: дальше идёт ResTable_map_entry, а не Res_value.
 _ENTRY_FLAG_COMPLEX = 0x0001
+# Компактная запись (Android 12+): ключ, тип и значение упакованы в 8 байт.
+_ENTRY_FLAG_COMPACT = 0x0008
 
 # Тип значения «строка» в Res_value: индекс в глобальном пуле строк.
 _VALUE_TYPE_STRING = 0x03
@@ -95,6 +97,38 @@ def _read_length16(data: bytes, position: int) -> tuple[int, int]:
     return first, position + 2
 
 
+def _decode_utf8_pool(raw: bytes) -> str:
+    """Декодирует строку UTF-8-пула, включая CESU-8.
+
+    aapt пишет символы вне BMP как две трёхбайтовые последовательности
+    (CESU-8). Python такой поток считает недопустимым, поэтому surrogatepass
+    плюс склейка пар вручную.
+    """
+    try:
+        text = raw.decode("utf-8", "surrogatepass")
+    except UnicodeDecodeError:
+        return raw.decode("utf-8", "replace")
+
+    chars: list[str] = []
+    index = 0
+    while index < len(text):
+        high = text[index]
+        if (
+            "\ud800" <= high <= "\udbff"
+            and index + 1 < len(text)
+            and "\udc00" <= text[index + 1] <= "\udfff"
+        ):
+            low = text[index + 1]
+            chars.append(
+                chr(0x10000 + ((ord(high) - 0xD800) << 10) + (ord(low) - 0xDC00))
+            )
+            index += 2
+        else:
+            chars.append(high)
+            index += 1
+    return "".join(chars)
+
+
 def parse_string_pool(data: bytes, offset: int) -> list[str]:
     """Читает пул строк — как UTF-8, так и UTF-16."""
     chunk_type, header_size, _ = _chunk(data, offset)
@@ -121,7 +155,7 @@ def parse_string_pool(data: bytes, offset: int) -> list[str]:
             _utf16_length, position = _read_length8(data, position)
             byte_length, position = _read_length8(data, position)
             raw = data[position : position + byte_length]
-            strings.append(raw.decode("utf-8", "replace"))
+            strings.append(_decode_utf8_pool(raw))
         else:
             char_length, position = _read_length16(data, position)
             raw = data[position : position + char_length * 2]
@@ -171,21 +205,32 @@ def _entry_name(
 
 def _parse_entry_value(
     data: bytes, position: int, global_strings: list[str]
-) -> str | None:
-    """Простое строковое значение или ``None``, если это не строка."""
-    size, entry_flags, _key_index = struct.unpack_from("<HHI", data, position)
+) -> tuple[str | None, int]:
+    """Строковое значение записи и индекс её ключа.
+
+    Компактная запись (``FLAG_COMPACT``) хранит ключ в поле размера, тип
+    значения — в старшем байте флагов, а само значение — сразу за ними.
+    """
+    size, entry_flags, key_index = struct.unpack_from("<HHI", data, position)
     if entry_flags & _ENTRY_FLAG_COMPLEX:
-        return None
+        return None, key_index
+
+    if entry_flags & _ENTRY_FLAG_COMPACT:
+        value_type = (entry_flags >> 8) & 0xFF
+        value_data = struct.unpack_from("<I", data, position + 4)[0]
+        if value_type != _VALUE_TYPE_STRING or value_data >= len(global_strings):
+            return None, size
+        return global_strings[value_data], size
 
     value_position = position + size
     if value_position + 8 > len(data):
-        return None
+        return None, key_index
     _value_size, _res0, value_type, value_data = struct.unpack_from(
         "<HBBI", data, value_position
     )
     if value_type != _VALUE_TYPE_STRING or value_data >= len(global_strings):
-        return None
-    return global_strings[value_data]
+        return None, key_index
+    return global_strings[value_data], key_index
 
 
 def _parse_type_chunk(
@@ -209,10 +254,9 @@ def _parse_type_chunk(
         position = entries_base + entry_offset
         if position + 8 > len(data):
             return
-        text = _parse_entry_value(data, position, global_strings)
+        text, key_index = _parse_entry_value(data, position, global_strings)
         if text is None or text == "":
             return
-        _size, _entry_flags, key_index = struct.unpack_from("<HHI", data, position)
         collected.append(
             ArscEntry(
                 _entry_name(key_strings, type_names, type_id, key_index),
