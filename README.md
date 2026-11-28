@@ -42,14 +42,21 @@ src/china_auto_rus/
 │   ├── strings.py    # поиск строк в бинарниках (UTF-8/UTF-16/GBK)
 │   ├── resources.py  # ключ → текст → язык, экспорт CSV
 │   ├── arsc.py       # разбор бинарной resources.arsc
+│   ├── arsc_write.py # пересборка таблицы и замена строк
+│   ├── apk_write.py  # замена resources.arsc внутри APK
+│   ├── build.py      # сборка APK из шаблона перевода
+│   ├── rro.py        # исходники RRO-оверлея
+│   ├── signing.py    # снятие старой подписи APK
 │   ├── axml.py       # разбор бинарного XML: манифест, layout
+│   ├── locale.py     # нормализация языковых кодов
 │   ├── translation.py# шаблон перевода, валидатор, дедупликация
 │   ├── analyzer.py   # оркестрация: scan → extract → report
 │   └── report.py     # JSON + Markdown
 └── ui/
-    ├── main_window.py  # окно, вкладки, меню, drag & drop
-    ├── file_models.py  # Qt-модели таблицы и дерева
-    └── workers.py      # QThread-worker анализа
+    ├── main_window.py       # окно, вкладки, меню, drag & drop
+    ├── russification_tab.py # шаблон → проверка → сборка
+    ├── file_models.py       # Qt-модели таблицы и дерева
+    └── workers.py           # QThread-worker'ы
 tests/                # pytest (ядро + offscreen UI)
 ```
 

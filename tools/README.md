@@ -1,5 +1,27 @@
 # Инструменты сбора данных с ГУ
 
+## prepare_experiment.py
+
+Готовит APK для опыта с подписью: снимает старую подпись v1, выравнивает
+`zipalign`, подписывает `apksigner` и проверяет сертификат. Нужны
+build-tools в `PATH` (см. `docs/russification.md`).
+
+```bat
+.venv\Scripts\python.exe tools\prepare_experiment.py FDroid.apk ^
+  --keystore C:\Android\keys\test.jks --alias test ^
+  --storepass testpass --out FDroid-otherkey.apk
+```
+
+Ключ создаётся один раз:
+
+```bat
+keytool -genkeypair -v -keystore C:\Android\keys\test.jks -alias test ^
+  -keyalg RSA -keysize 2048 -validity 10000 ^
+  -storepass testpass -keypass testpass -dname "CN=Test"
+```
+
+Скрипт ничего не перезаписывает без `--force`.
+
 ## check_arsc.py
 
 Проверяет запись `resources.arsc` на реальном APK: разбирает таблицу,
