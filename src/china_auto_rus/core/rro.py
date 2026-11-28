@@ -1,7 +1,7 @@
 """RRO-оверлей: отдельный APK с русскими строками, оригинал не меняется.
 
 Генератор собирает исходники оверлея: ``AndroidManifest.xml`` и
-``res/values-ru/strings.xml``. Компиляция и подпись — внешние шаги
+``res/values/strings.xml``. Компиляция и подпись — внешние шаги
 (``aapt2 link``, ``zipalign``, ``apksigner``), в зависимости проекта они
 не входят.
 
@@ -34,7 +34,6 @@ class RroOverlay:
 
     package: str
     target_package: str
-    locale: str
     manifest: str
     strings_xml: str
     strings: int
@@ -61,14 +60,10 @@ def _overlay_package(target_package: str) -> str:
 def build_overlay(
     target_package: str,
     rows: Iterable[TranslationRow],
-    *,
-    locale: str = "ru",
 ) -> RroOverlay:
     """Собирает манифест и ``strings.xml`` из заполненного шаблона."""
     if not _PACKAGE.fullmatch(target_package):
         raise RroError(f"некорректное имя пакета: {target_package}")
-    if not re.fullmatch(r"[a-z]{2,3}(-r[A-Z]{2})?", locale):
-        raise RroError(f"некорректная локаль: {locale}")
 
     strings: dict[str, str] = {}
     skipped: list[str] = []
@@ -114,7 +109,6 @@ def build_overlay(
     return RroOverlay(
         package=_overlay_package(target_package),
         target_package=target_package,
-        locale=locale,
         manifest=manifest,
         strings_xml=strings_xml,
         strings=len(strings),
@@ -125,7 +119,7 @@ def build_overlay(
 def write_overlay(overlay: RroOverlay, directory: Path) -> tuple[Path, Path]:
     """Записывает исходники оверлея. Возвращает пути манифеста и строк."""
     manifest_path = directory / "AndroidManifest.xml"
-    strings_path = directory / "res" / f"values-{overlay.locale}" / "strings.xml"
+    strings_path = directory / "res" / "values" / "strings.xml"
     strings_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(overlay.manifest, encoding="utf-8")
     strings_path.write_text(overlay.strings_xml, encoding="utf-8")

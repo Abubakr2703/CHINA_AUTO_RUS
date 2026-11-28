@@ -380,7 +380,7 @@ zh-CN,string/settings_title,设置,Параметры
 
     assert code == 0
     manifest = (output / "AndroidManifest.xml").read_text(encoding="utf-8")
-    strings = (output / "res" / "values-ru" / "strings.xml").read_text(
+    strings = (output / "res" / "values" / "strings.xml").read_text(
         encoding="utf-8"
     )
     assert 'android:targetPackage="com.example.app"' in manifest

@@ -105,17 +105,12 @@ def test_build_overlay_rejects_empty_template() -> None:
         build_overlay("com.example.app", [_row("string/title", "")])
 
 
-def test_build_overlay_rejects_bad_locale() -> None:
-    with pytest.raises(RroError):
-        build_overlay("com.example.app", [_row("string/title", "Текст")], locale="russian")
-
-
 def test_write_overlay_creates_sources(tmp_path: Path) -> None:
     overlay = build_overlay("com.example.app", [_row("string/title", "Заголовок")])
 
     manifest_path, strings_path = write_overlay(overlay, tmp_path)
 
     assert manifest_path == tmp_path / "AndroidManifest.xml"
-    assert strings_path == tmp_path / "res" / "values-ru" / "strings.xml"
+    assert strings_path == tmp_path / "res" / "values" / "strings.xml"
     assert manifest_path.read_text(encoding="utf-8") == overlay.manifest
     assert strings_path.read_text(encoding="utf-8") == overlay.strings_xml
