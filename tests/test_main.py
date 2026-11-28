@@ -77,7 +77,9 @@ def test_check_mode_does_not_start_gui(
     monkeypatch.setattr(main_module, "_load_gui", fail)
 
     assert main_module.main(["--check"]) == 0
-    assert "CHINA AUTO RUS" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "CHINA AUTO RUS" in out
+    assert "APK-инструменты:" in out
 
 
 def test_strings_mode_finds_chinese_text(
